@@ -1,0 +1,46 @@
+# ─── Python ───────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+*.pdb
+*.egg-info/
+*.egg
+
+# ─── Virtual Environment ──────────────────────────
+.venv/
+venv/
+env/
+venv310/
+
+# ─── PyInstaller Build Artifacts ─────────────────
+build/
+dist/
+*.spec
+
+# ─── Large Binary / Mesh Files ───────────────────
+# Mesh files can be large; track only via Git LFS or exclude entirely
+*.stl
+*.obj
+*.obj.obj
+*.ply
+*.vtk
+*.vtp
+
+# ─── Legacy / Junk Folders ───────────────────────
+core/
+viewer/
+data/
+
+# ─── Word Docs / Scratch notes ───────────────────
+*.docx
+command.txt
+*.txt
+
+# ─── OS & Editor ─────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
