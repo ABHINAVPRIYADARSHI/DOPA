@@ -16,7 +16,6 @@ venv310/
 # ─── PyInstaller Build Artifacts ─────────────────
 build/
 dist/
-*.spec
 
 # ─── Large Binary / Mesh Files ───────────────────
 # Mesh files can be large; track only via Git LFS or exclude entirely
@@ -26,6 +25,7 @@ dist/
 *.ply
 *.vtk
 *.vtp
+!mandible.obj.obj
 
 # ─── Legacy / Junk Folders ───────────────────────
 core/
@@ -36,6 +36,7 @@ data/
 *.docx
 command.txt
 *.txt
+!requirements.txt
 
 # ─── Agent / AI Files ───────────────────────────
 agent.md

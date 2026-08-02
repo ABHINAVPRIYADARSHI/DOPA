@@ -1,0 +1,16 @@
+# DOPA - Desktop Occlusal Plane Analyzer Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core UI & 3D Visualization
+PyQt5>=5.15.0
+pyvista>=0.40.0
+pyvistaqt>=0.11.0
+vtk>=9.2.0
+
+# Numerical, Spatial & ML Algorithms
+numpy>=1.24.0
+scipy>=1.10.0
+scikit-learn>=1.2.0
+
+# Packaging & Executable Building
+pyinstaller>=6.0.0
