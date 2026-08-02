@@ -37,6 +37,12 @@ data/
 command.txt
 *.txt
 
+# ─── Agent / AI Files ───────────────────────────
+agent.md
+agents.md
+.agent/
+.agents/
+
 # ─── OS & Editor ─────────────────────────────────
 .DS_Store
 Thumbs.db
