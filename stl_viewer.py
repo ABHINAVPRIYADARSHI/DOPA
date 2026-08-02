@@ -234,6 +234,60 @@ class DOPAWindow(QMainWindow):
 
         root_layout.addWidget(toolbar)
 
+        # ── View presets bar ───────────────────────────────────────────
+        view_bar = QFrame()
+        view_bar.setFixedHeight(40)
+        view_bar.setStyleSheet("""
+            QFrame {
+                background: #16213e;
+                border-bottom: 1px solid #0f3460;
+            }
+        """)
+        vb_lay = QHBoxLayout(view_bar)
+        vb_lay.setContentsMargins(10, 0, 10, 0)
+        vb_lay.setSpacing(6)
+
+        view_lbl = QLabel("View:")
+        view_lbl.setStyleSheet("color: #718096; font-size: 11px; background: transparent;")
+        vb_lay.addWidget(view_lbl)
+
+        view_btn_style = """
+            QPushButton {
+                background: #1a1a2e;
+                color: #a0aec0;
+                border: 1px solid #2d3748;
+                border-radius: 4px;
+                padding: 0 12px;
+                font-size: 11px;
+                min-width: 56px;
+            }
+            QPushButton:hover   { background: #0f3460; color: #e2e8f0; border-color: #4299e1; }
+            QPushButton:pressed { background: #063070; }
+            QPushButton:disabled{ color: #4a5568; border-color: #1a202c; }
+        """
+
+        self._view_buttons = []
+        for label, view in [
+            ("⬆ Front",  "front"),
+            ("⬇ Back",   "back"),
+            ("▲ Top",    "top"),
+            ("▼ Bottom", "bottom"),
+            ("◀ Left",   "left"),
+            ("▶ Right",  "right"),
+            ("⤢ ISO",    "iso"),
+        ]:
+            btn = QPushButton(label)
+            btn.setFixedHeight(28)
+            btn.setEnabled(False)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(view_btn_style)
+            btn.clicked.connect(lambda checked, v=view: self._set_view(v))
+            vb_lay.addWidget(btn)
+            self._view_buttons.append(btn)
+
+        vb_lay.addStretch()
+        root_layout.addWidget(view_bar)
+
         # ── Splitter: VTK view  |  Info panel ─────────────────────────
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(2)
@@ -247,13 +301,49 @@ class DOPAWindow(QMainWindow):
         vtk_lay.setContentsMargins(0, 0, 0, 0)
 
         # Placeholder shown before mesh is loaded
-        self.placeholder = QLabel(
-            "Open a 3-D mesh file to begin analysis\n\n"
-            "Supported formats: OBJ · STL · PLY · VTK · VTP"
+        self.placeholder = QWidget()
+        self.placeholder.setStyleSheet("background: #0d1117;")
+        ph_lay = QVBoxLayout(self.placeholder)
+        ph_lay.setAlignment(Qt.AlignCenter)
+        ph_lay.setSpacing(24)
+
+        ph_icon = QLabel("🦷")
+        ph_icon.setAlignment(Qt.AlignCenter)
+        ph_icon.setFont(QFont("Segoe UI", 52))
+        ph_icon.setStyleSheet("background: transparent; color: #2d3748;")
+        ph_lay.addWidget(ph_icon)
+
+        ph_text = QLabel(
+            "No mesh loaded"
         )
-        self.placeholder.setAlignment(Qt.AlignCenter)
-        self.placeholder.setFont(QFont("Segoe UI", 14))
-        self.placeholder.setStyleSheet("color: #4a5568; background: #0d1117;")
+        ph_text.setAlignment(Qt.AlignCenter)
+        ph_text.setFont(QFont("Segoe UI", 16))
+        ph_text.setStyleSheet("color: #4a5568; background: transparent;")
+        ph_lay.addWidget(ph_text)
+
+        ph_sub = QLabel("Supported formats: OBJ · STL · PLY · VTK · VTP")
+        ph_sub.setAlignment(Qt.AlignCenter)
+        ph_sub.setFont(QFont("Segoe UI", 10))
+        ph_sub.setStyleSheet("color: #2d3748; background: transparent;")
+        ph_lay.addWidget(ph_sub)
+
+        self.ph_open_btn = QPushButton("📂   Open Mesh File")
+        self.ph_open_btn.setFixedSize(220, 48)
+        self.ph_open_btn.setCursor(Qt.PointingHandCursor)
+        self.ph_open_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        self.ph_open_btn.setStyleSheet("""
+            QPushButton {
+                background: #e94560;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+            }
+            QPushButton:hover  { background: #c73652; }
+            QPushButton:pressed{ background: #a02840; }
+        """)
+        self.ph_open_btn.clicked.connect(self._open_file_dialog)
+        ph_lay.addWidget(self.ph_open_btn, alignment=Qt.AlignCenter)
+
         vtk_lay.addWidget(self.placeholder)
 
         # Processing overlay (hidden initially)
@@ -445,6 +535,8 @@ class DOPAWindow(QMainWindow):
     def _load_mesh(self, path: str):
         self.open_btn.setEnabled(False)
         self.reset_btn.setEnabled(False)
+        for b in self._view_buttons:
+            b.setEnabled(False)
         self.status_bar.showMessage(f"Loading: {os.path.basename(path)} …")
         self._show_overlay("Reading mesh and detecting cusp tips …")
 
@@ -478,6 +570,8 @@ class DOPAWindow(QMainWindow):
 
         self.open_btn.setEnabled(True)
         self.reset_btn.setEnabled(True)
+        for b in self._view_buttons:
+            b.setEnabled(True)
 
         self._build_plotter()
 
@@ -487,6 +581,43 @@ class DOPAWindow(QMainWindow):
         self.open_btn.setEnabled(True)
         from PyQt5.QtWidgets import QMessageBox
         QMessageBox.critical(self, "Load Error", f"Could not load mesh:\n{err}")
+
+    # ------------------------------------------------------------------
+    # Camera view presets
+    # ------------------------------------------------------------------
+    def _set_view(self, view: str):
+        if self.plotter is None:
+            return
+        presets = {
+            "front":  dict(position=(0, -1, 0),  viewup=(0, 0, 1)),
+            "back":   dict(position=(0,  1, 0),  viewup=(0, 0, 1)),
+            "top":    dict(position=(0,  0, 1),  viewup=(0, 1, 0)),
+            "bottom": dict(position=(0,  0, -1), viewup=(0, 1, 0)),
+            "left":   dict(position=(-1, 0, 0),  viewup=(0, 0, 1)),
+            "right":  dict(position=( 1, 0, 0),  viewup=(0, 0, 1)),
+            "iso":    dict(position=(1, -1, 1),   viewup=(0, 0, 1)),
+        }
+        if view not in presets:
+            return
+        p = presets[view]
+        # Scale direction to fit the current model bounds
+        bounds = self.mesh.bounds          # (xmin,xmax,ymin,ymax,zmin,zmax)
+        cx = (bounds[0] + bounds[1]) / 2
+        cy = (bounds[2] + bounds[3]) / 2
+        cz = (bounds[4] + bounds[5]) / 2
+        diag = max(
+            bounds[1] - bounds[0],
+            bounds[3] - bounds[2],
+            bounds[5] - bounds[4],
+        ) * 2.5
+        dx, dy, dz = p["position"]
+        self.plotter.camera.focal_point = (cx, cy, cz)
+        self.plotter.camera.position    = (cx + dx * diag,
+                                           cy + dy * diag,
+                                           cz + dz * diag)
+        self.plotter.camera.up          = p["viewup"]
+        self.plotter.reset_camera()
+        self.plotter.render()
 
     # ------------------------------------------------------------------
     # Build / refresh the VTK plotter
