@@ -22,7 +22,7 @@ from pyvistaqt import BackgroundPlotter   # embeds VTK inside Qt window
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QStatusBar, QProgressBar,
-    QSizePolicy, QFrame, QSplitter
+    QSizePolicy, QFrame, QSplitter, QScrollArea
 )
 from PyQt5.QtCore import (
     Qt, QThread, pyqtSignal, QTimer, QSize
@@ -154,7 +154,7 @@ class MeshLoader(QThread):
 class DOPAWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DOPA – Desktop Occlusal Plane Analyzer")
+        self.setWindowTitle("SanVie")
         self.resize(1280, 800)
         self._set_icon()
 
@@ -198,7 +198,7 @@ class DOPAWindow(QMainWindow):
         tb_lay = QHBoxLayout(toolbar)
         tb_lay.setContentsMargins(14, 0, 14, 0)
 
-        title_lbl = QLabel("🦷  DOPA — Occlusal Plane Analyzer")
+        title_lbl = QLabel("Sanvie 🦷  3D Digital Occlusion Plane Analyser")
         title_lbl.setFont(QFont("Segoe UI", 14, QFont.Bold))
         title_lbl.setStyleSheet("color: #e2e8f0; background: transparent;")
         tb_lay.addWidget(title_lbl)
@@ -408,8 +408,7 @@ class DOPAWindow(QMainWindow):
         val_style = "color: #e2e8f0; font-size: 13px; background: transparent;"
 
         # ── Cusp count ──────────────────────────────
-        QLabel("Detected Cusps", info_panel).setStyleSheet(section_style)
-        # info_lay.addWidget(self._section("Detected Cusps", section_style))
+        info_lay.addWidget(self._section("Detected Cusps", section_style))
         self.cusp_count_lbl = QLabel("—")
         self.cusp_count_lbl.setFont(QFont("Segoe UI", 28, QFont.Bold))
         self.cusp_count_lbl.setStyleSheet("color: #68d391; background: transparent;")
@@ -433,13 +432,40 @@ class DOPAWindow(QMainWindow):
         info_lay.addWidget(self.sel_lbl)
 
         info_lay.addWidget(self._section("Deviation Report", section_style))
+
+        dev_scroll = QScrollArea()
+        dev_scroll.setWidgetResizable(True)
+        dev_scroll.setFrameShape(QFrame.NoFrame)
+        dev_scroll.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: #1a202c;
+                width: 6px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #4a5568;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #e94560;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+
         self.dev_lbl = QLabel("—")
         self.dev_lbl.setWordWrap(True)
         self.dev_lbl.setStyleSheet(val_style)
         self.dev_lbl.setFont(QFont("Segoe UI", 10))
-        info_lay.addWidget(self.dev_lbl)
+        self.dev_lbl.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
-        info_lay.addStretch()
+        dev_scroll.setWidget(self.dev_lbl)
+        info_lay.addWidget(dev_scroll, 1)
 
         # Instructions
         hint = QLabel(
@@ -447,7 +473,12 @@ class DOPAWindow(QMainWindow):
             "🟢 Green  = auto-detected cusp\n"
             "🟡 Yellow = selected by you\n"
             "🔵 Blue   = below Monson sphere\n"
-            "🔴 Red    = above Monson sphere"
+            "🔴 Red    = above Monson sphere\n\n"
+            "Mouse controls\n"
+            "🖱 Left-drag   = rotate\n"
+            "🖱 Scroll      = zoom\n"
+            "🖱 Shift+drag   = pan\n"
+            "⌨ Right click/ P key = pick cusp under cursor"
         )
         hint.setWordWrap(True)
         hint.setFont(QFont("Segoe UI", 10))
@@ -645,13 +676,28 @@ class DOPAWindow(QMainWindow):
                 pv.Sphere(radius=0.8, center=c), color="#68d391"
             )
 
-        # Enable picking
-        self.plotter.enable_point_picking(
-            callback=self._pick_callback,
-            show_message=True,
-            show_point=True,
-            tolerance=0.025,
-        )
+        # Enable trackball camera style (supports scroll wheel zoom & pan)
+        self.plotter.enable_trackball_style()
+
+        # Enable picking — left_clicking=False keeps mouse buttons free
+        # for camera navigation (rotate / zoom / pan).
+        # Users pick a cusp by hovering over it and pressing the P key.
+        try:
+            self.plotter.enable_point_picking(
+                callback=self._pick_callback,
+                show_message=False,
+                show_point=True,
+                tolerance=0.025,
+                left_clicking=False,   # ← do NOT hijack mouse events
+            )
+        except TypeError:
+            # Older PyVista versions that don't accept left_clicking
+            self.plotter.enable_point_picking(
+                callback=self._pick_callback,
+                show_message=False,
+                show_point=True,
+                tolerance=0.025,
+            )
 
         # Embed Qt widget
         vtk_lay = self.vtk_container.layout()
@@ -679,16 +725,21 @@ class DOPAWindow(QMainWindow):
         center = compute_monson(pts)
 
         # Draw Monson sphere
+        # ambient=1.0 / diffuse=0.0: render in true flat colour so VTK
+        # lighting doesn't darken the sphere against the dark background.
         sphere = pv.Sphere(radius=MONSON_RADIUS, center=center,
                            theta_resolution=120, phi_resolution=120)
-        self.plotter.add_mesh(sphere, color="#4299e1", opacity=0.25)
+        self.plotter.add_mesh(sphere, color="#7cced9", opacity=0.10,
+                              ambient=1.0, diffuse=0.0, specular=0.0)
 
         # Deviation analysis
         lines = []
         for cusp in self.cusp_pts:
             deviation = np.linalg.norm(cusp - center) - MONSON_RADIUS
-            color  = "#fc8181" if deviation > 0 else "#63b3ed"
-            status = "above" if deviation > 0 else "below"
+            is_above = deviation > 0
+            color = "#fc8181" if is_above else "#63b3ed"
+            badge_color = "#dc2626" if is_above else "#2563eb"
+            status = "above" if is_above else "below"
 
             self.plotter.add_mesh(
                 pv.Sphere(radius=0.9, center=cusp), color=color
@@ -697,8 +748,11 @@ class DOPAWindow(QMainWindow):
                 [cusp],
                 [f"{deviation:+.2f} mm"],
                 point_size=16,
-                text_color=color,
-                font_size=10,
+                text_color="#ffffff",
+                shape_color=badge_color,
+                shape_opacity=0.9,
+                font_size=11,
+                bold=True,
             )
             lines.append(f"  {status}  {deviation:+.2f} mm")
 
