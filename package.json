@@ -1,7 +1,7 @@
 {
-  "name": "dopa-app",
+  "name": "SimVie",
   "version": "1.0.0",
-  "description": "Desktop Occlusal Analyzer (DOPA)",
+  "description": "3D Desktop Occlusal Analyzer (DOPA)",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

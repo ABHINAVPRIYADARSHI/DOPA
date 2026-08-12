@@ -162,6 +162,7 @@ class DOPAWindow(QMainWindow):
         self.cusp_pts   = None
         self.selected   = []
         self.loader     = None
+        self.plotter    = None
         self._spinner_angle = 0
 
         self._build_ui()
@@ -191,93 +192,118 @@ class DOPAWindow(QMainWindow):
         toolbar.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #1a1a2e, stop:1 #16213e);
-                border-bottom: 1px solid #0f3460;
+                    stop:0 #0f172a, stop:1 #1e293b);
+                border-bottom: 1px solid #334155;
             }
         """)
         tb_lay = QHBoxLayout(toolbar)
-        tb_lay.setContentsMargins(14, 0, 14, 0)
+        tb_lay.setContentsMargins(18, 0, 18, 0)
 
-        title_lbl = QLabel("Sanvie 🦷  3D Digital Occlusion Plane Analyser")
-        title_lbl.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        title_lbl.setStyleSheet("color: #e2e8f0; background: transparent;")
+        title_lbl = QLabel("SanVie 🦷  Digital Occlusal Plane Analyser")
+        title_lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        title_lbl.setStyleSheet("color: #f8fafc; background: transparent;")
         tb_lay.addWidget(title_lbl)
 
         tb_lay.addStretch()
 
-        self.open_btn = QPushButton("📂  Open Mesh")
-        self.open_btn.setFixedHeight(36)
-        self.open_btn.setCursor(Qt.PointingHandCursor)
-        self.open_btn.setStyleSheet("""
+        btn_style_primary = """
             QPushButton {
-                background: #0f3460;
-                color: #e2e8f0;
-                border: 1px solid #e94560;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284c7, stop:1 #0369a1);
+                color: #ffffff;
+                border: 1px solid #38bdf8;
                 border-radius: 6px;
-                padding: 0 18px;
-                font-size: 13px;
+                padding: 0 16px;
+                font-size: 12px;
+                font-weight: 600;
             }
-            QPushButton:hover  { background: #e94560; }
-            QPushButton:pressed{ background: #c73652; }
-            QPushButton:disabled{ background: #2d3748; color: #718096; border-color: #4a5568; }
-        """)
+            QPushButton:hover   { background: #38bdf8; color: #0f172a; border-color: #7dd3fc; }
+            QPushButton:pressed { background: #0284c7; color: #ffffff; }
+            QPushButton:disabled{ background: #1e293b; color: #475569; border-color: #334155; }
+        """
+        btn_style_secondary = """
+            QPushButton {
+                background: #1e293b;
+                color: #e2e8f0;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 0 16px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton:hover   { background: #334155; color: #ffffff; border-color: #475569; }
+            QPushButton:pressed { background: #0f172a; }
+            QPushButton:disabled{ background: #0f172a; color: #475569; border-color: #1e293b; }
+        """
+
+        self.open_btn = QPushButton("📂  Open Mesh")
+        self.open_btn.setFixedHeight(34)
+        self.open_btn.setCursor(Qt.PointingHandCursor)
+        self.open_btn.setStyleSheet(btn_style_primary)
         self.open_btn.clicked.connect(self._open_file_dialog)
         tb_lay.addWidget(self.open_btn)
 
         self.reset_btn = QPushButton("🔄  Reset")
-        self.reset_btn.setFixedHeight(36)
+        self.reset_btn.setFixedHeight(34)
         self.reset_btn.setEnabled(False)
         self.reset_btn.setCursor(Qt.PointingHandCursor)
-        self.reset_btn.setStyleSheet(self.open_btn.styleSheet())
+        self.reset_btn.setStyleSheet(btn_style_primary)
         self.reset_btn.clicked.connect(self._reset)
         tb_lay.addWidget(self.reset_btn)
 
         root_layout.addWidget(toolbar)
 
-        # ── View presets bar ───────────────────────────────────────────
+        # ── Content Container (Left View Bar + Splitter) ────────────────
+        content_widget = QWidget()
+        content_lay = QHBoxLayout(content_widget)
+        content_lay.setContentsMargins(0, 0, 0, 0)
+        content_lay.setSpacing(0)
+
+        # ── View presets bar (Vertical Left Sidebar) ───────────────────
         view_bar = QFrame()
-        view_bar.setFixedHeight(40)
+        view_bar.setFixedWidth(96)
         view_bar.setStyleSheet("""
             QFrame {
-                background: #16213e;
-                border-bottom: 1px solid #0f3460;
+                background: #0f172a;
+                border-right: 1px solid #1e293b;
             }
         """)
-        vb_lay = QHBoxLayout(view_bar)
-        vb_lay.setContentsMargins(10, 0, 10, 0)
-        vb_lay.setSpacing(6)
+        vb_lay = QVBoxLayout(view_bar)
+        vb_lay.setContentsMargins(8, 14, 8, 14)
+        vb_lay.setSpacing(8)
 
-        view_lbl = QLabel("View:")
-        view_lbl.setStyleSheet("color: #718096; font-size: 11px; background: transparent;")
-        vb_lay.addWidget(view_lbl)
+        view_lbl = QLabel("VIEWS")
+        view_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        view_lbl.setStyleSheet("color: #64748b; letter-spacing: 1px; background: transparent;")
+        vb_lay.addWidget(view_lbl, alignment=Qt.AlignCenter)
 
         view_btn_style = """
             QPushButton {
-                background: #1a1a2e;
-                color: #a0aec0;
-                border: 1px solid #2d3748;
-                border-radius: 4px;
-                padding: 0 12px;
+                background: #1e293b;
+                color: #cbd5e1;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 6px 0px;
                 font-size: 11px;
-                min-width: 56px;
+                font-weight: 500;
             }
-            QPushButton:hover   { background: #0f3460; color: #e2e8f0; border-color: #4299e1; }
-            QPushButton:pressed { background: #063070; }
-            QPushButton:disabled{ color: #4a5568; border-color: #1a202c; }
+            QPushButton:hover   { background: #0284c7; color: #ffffff; border-color: #38bdf8; }
+            QPushButton:pressed { background: #0369a1; }
+            QPushButton:disabled{ background: #0f172a; color: #475569; border-color: #1e293b; }
         """
 
         self._view_buttons = []
-        for label, view in [
-            ("⬆ Front",  "front"),
-            ("⬇ Back",   "back"),
-            ("▲ Top",    "top"),
-            ("▼ Bottom", "bottom"),
-            ("◀ Left",   "left"),
-            ("▶ Right",  "right"),
-            ("⤢ ISO",    "iso"),
+        for label, view, tooltip in [
+            ("↑ Front",  "front",  "Front Camera View"),
+            ("↓ Back",   "back",   "Back Camera View"),
+            ("▲ Top",    "top",    "Top Occlusal View"),
+            ("▼ Bottom", "bottom", "Bottom View"),
+            ("◀ Left",   "left",   "Left Sagittal View"),
+            ("▶ Right",  "right",  "Right Sagittal View"),
+            ("⤢ ISO",    "iso",    "Isometric Perspective"),
         ]:
             btn = QPushButton(label)
-            btn.setFixedHeight(28)
+            btn.setFixedHeight(30)
+            btn.setToolTip(tooltip)
             btn.setEnabled(False)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(view_btn_style)
@@ -286,60 +312,58 @@ class DOPAWindow(QMainWindow):
             self._view_buttons.append(btn)
 
         vb_lay.addStretch()
-        root_layout.addWidget(view_bar)
+        content_lay.addWidget(view_bar)
 
         # ── Splitter: VTK view  |  Info panel ─────────────────────────
         splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(2)
-        splitter.setStyleSheet("QSplitter::handle { background: #0f3460; }")
+        splitter.setHandleWidth(1)
+        splitter.setStyleSheet("QSplitter::handle { background: #1e293b; }")
 
         # VTK / overlay area
         self.vtk_container = QWidget()
         self.vtk_container.setMinimumWidth(600)
-        self.vtk_container.setStyleSheet("background: #0d1117;")
+        self.vtk_container.setStyleSheet("background: #090d16;")
         vtk_lay = QVBoxLayout(self.vtk_container)
         vtk_lay.setContentsMargins(0, 0, 0, 0)
 
         # Placeholder shown before mesh is loaded
         self.placeholder = QWidget()
-        self.placeholder.setStyleSheet("background: #0d1117;")
+        self.placeholder.setStyleSheet("background: #090d16;")
         ph_lay = QVBoxLayout(self.placeholder)
         ph_lay.setAlignment(Qt.AlignCenter)
-        ph_lay.setSpacing(24)
+        ph_lay.setSpacing(20)
 
         ph_icon = QLabel("🦷")
         ph_icon.setAlignment(Qt.AlignCenter)
-        ph_icon.setFont(QFont("Segoe UI", 52))
-        ph_icon.setStyleSheet("background: transparent; color: #2d3748;")
+        ph_icon.setFont(QFont("Segoe UI", 56))
+        ph_icon.setStyleSheet("background: transparent;")
         ph_lay.addWidget(ph_icon)
 
-        ph_text = QLabel(
-            "No mesh loaded"
-        )
+        ph_text = QLabel("No 3D Mesh Loaded")
         ph_text.setAlignment(Qt.AlignCenter)
-        ph_text.setFont(QFont("Segoe UI", 16))
-        ph_text.setStyleSheet("color: #4a5568; background: transparent;")
+        ph_text.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        ph_text.setStyleSheet("color: #f8fafc; background: transparent;")
         ph_lay.addWidget(ph_text)
 
-        ph_sub = QLabel("Supported formats: OBJ · STL · PLY · VTK · VTP")
+        ph_sub = QLabel("Supported Formats: OBJ · STL · PLY · VTK · VTP")
         ph_sub.setAlignment(Qt.AlignCenter)
         ph_sub.setFont(QFont("Segoe UI", 10))
-        ph_sub.setStyleSheet("color: #2d3748; background: transparent;")
+        ph_sub.setStyleSheet("color: #64748b; background: transparent;")
         ph_lay.addWidget(ph_sub)
 
         self.ph_open_btn = QPushButton("📂   Open Mesh File")
-        self.ph_open_btn.setFixedSize(220, 48)
+        self.ph_open_btn.setFixedSize(210, 44)
         self.ph_open_btn.setCursor(Qt.PointingHandCursor)
-        self.ph_open_btn.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        self.ph_open_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
         self.ph_open_btn.setStyleSheet("""
             QPushButton {
-                background: #e94560;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284c7, stop:1 #0369a1);
                 color: #ffffff;
-                border: none;
+                border: 1px solid #38bdf8;
                 border-radius: 8px;
             }
-            QPushButton:hover  { background: #c73652; }
-            QPushButton:pressed{ background: #a02840; }
+            QPushButton:hover  { background: #38bdf8; color: #0f172a; border-color: #7dd3fc; }
+            QPushButton:pressed{ background: #0284c7; color: #ffffff; }
         """)
         self.ph_open_btn.clicked.connect(self._open_file_dialog)
         ph_lay.addWidget(self.ph_open_btn, alignment=Qt.AlignCenter)
@@ -349,37 +373,37 @@ class DOPAWindow(QMainWindow):
         # Processing overlay (hidden initially)
         self.processing_overlay = QWidget(self.vtk_container)
         self.processing_overlay.setStyleSheet(
-            "background: rgba(13,17,23,210); border-radius: 12px;"
+            "background: rgba(9, 13, 22, 220); border-radius: 12px;"
         )
         overlay_lay = QVBoxLayout(self.processing_overlay)
         overlay_lay.setAlignment(Qt.AlignCenter)
 
         self.spinner_lbl = QLabel("⏳")
         self.spinner_lbl.setAlignment(Qt.AlignCenter)
-        self.spinner_lbl.setFont(QFont("Segoe UI", 48))
+        self.spinner_lbl.setFont(QFont("Segoe UI", 44))
         overlay_lay.addWidget(self.spinner_lbl)
 
         self.proc_lbl = QLabel("Initialising …")
         self.proc_lbl.setAlignment(Qt.AlignCenter)
-        self.proc_lbl.setFont(QFont("Segoe UI", 13))
-        self.proc_lbl.setStyleSheet("color: #e2e8f0; background: transparent;")
+        self.proc_lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        self.proc_lbl.setStyleSheet("color: #f8fafc; background: transparent;")
         overlay_lay.addWidget(self.proc_lbl)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)          # indeterminate
-        self.progress_bar.setFixedWidth(320)
-        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setFixedWidth(300)
+        self.progress_bar.setFixedHeight(6)
         self.progress_bar.setTextVisible(False)
         self.progress_bar.setStyleSheet("""
             QProgressBar {
                 border: none;
-                border-radius: 4px;
-                background: #1a202c;
+                border-radius: 3px;
+                background: #1e293b;
             }
             QProgressBar::chunk {
-                border-radius: 4px;
+                border-radius: 3px;
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #e94560, stop:1 #0f3460);
+                    stop:0 #0ea5e9, stop:1 #38bdf8);
             }
         """)
         overlay_lay.addWidget(self.progress_bar, alignment=Qt.AlignCenter)
@@ -389,49 +413,70 @@ class DOPAWindow(QMainWindow):
 
         # ── Info/results panel ──────────────────────────────────────────
         info_panel = QFrame()
-        info_panel.setFixedWidth(280)
+        info_panel.setFixedWidth(290)
         info_panel.setStyleSheet("""
             QFrame {
-                background: #111827;
-                border-left: 1px solid #0f3460;
+                background: #0f172a;
+                border-left: 1px solid #1e293b;
             }
         """)
         info_lay = QVBoxLayout(info_panel)
-        info_lay.setContentsMargins(16, 16, 16, 16)
-        info_lay.setSpacing(12)
+        info_lay.setContentsMargins(14, 14, 14, 14)
+        info_lay.setSpacing(10)
 
-        section_style = (
-            "color: #e94560; font-size: 11px; font-weight: bold; "
-            "text-transform: uppercase; letter-spacing: 1px; "
-            "background: transparent;"
-        )
-        val_style = "color: #e2e8f0; font-size: 13px; background: transparent;"
+        card_style = """
+            QFrame {
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 8px;
+            }
+        """
 
-        # ── Cusp count ──────────────────────────────
-        info_lay.addWidget(self._section("Detected Cusps", section_style))
+        # ── Card 1: Detected Cusps ──────────────────
+        cusp_card = QFrame()
+        cusp_card.setStyleSheet(card_style)
+        cc_lay = QVBoxLayout(cusp_card)
+        cc_lay.setContentsMargins(12, 10, 12, 10)
+        cc_lay.setSpacing(4)
+        cc_lay.addWidget(self._section("DETECTED CUSPS"))
         self.cusp_count_lbl = QLabel("—")
-        self.cusp_count_lbl.setFont(QFont("Segoe UI", 28, QFont.Bold))
-        self.cusp_count_lbl.setStyleSheet("color: #68d391; background: transparent;")
-        info_lay.addWidget(self.cusp_count_lbl)
+        self.cusp_count_lbl.setFont(QFont("Segoe UI", 24, QFont.Bold))
+        self.cusp_count_lbl.setStyleSheet("color: #34d399; background: transparent;")
+        cc_lay.addWidget(self.cusp_count_lbl)
+        info_lay.addWidget(cusp_card)
 
-        info_lay.addWidget(self._section("Monson Sphere", section_style))
+        # ── Card 2: Selection & Monson Sphere ───────
+        monson_card = QFrame()
+        monson_card.setStyleSheet(card_style)
+        mc_lay = QVBoxLayout(monson_card)
+        mc_lay.setContentsMargins(12, 10, 12, 10)
+        mc_lay.setSpacing(6)
 
+        mc_lay.addWidget(self._section("SELECTION STATUS"))
+        self.sel_lbl = QLabel("0 / 3 cusps selected")
+        self.sel_lbl.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self.sel_lbl.setStyleSheet("color: #fbbf24; background: transparent;")
+        mc_lay.addWidget(self.sel_lbl)
+
+        mc_lay.addWidget(self._section("MONSON SPHERE"))
         self.monson_lbl = QLabel(
-            "Select 3 cusp tips in the 3-D view\n"
-            "(hover + press P) to compute the\nMonson sphere."
+            "Select 3 cusp tips in 3D view\n"
+            "(hover over cusp + press P key)\n"
+            "to compute Monson sphere."
         )
         self.monson_lbl.setWordWrap(True)
-        self.monson_lbl.setStyleSheet(val_style)
-        self.monson_lbl.setFont(QFont("Segoe UI", 11))
-        info_lay.addWidget(self.monson_lbl)
+        self.monson_lbl.setStyleSheet("color: #94a3b8; font-size: 11px; background: transparent;")
+        self.monson_lbl.setFont(QFont("Segoe UI", 10))
+        mc_lay.addWidget(self.monson_lbl)
+        info_lay.addWidget(monson_card)
 
-        info_lay.addWidget(self._section("Selection", section_style))
-        self.sel_lbl = QLabel("0 / 3 cusps selected")
-        self.sel_lbl.setStyleSheet(val_style)
-        self.sel_lbl.setFont(QFont("Segoe UI", 11))
-        info_lay.addWidget(self.sel_lbl)
-
-        info_lay.addWidget(self._section("Deviation Report", section_style))
+        # ── Card 3: Deviation Report ────────────────
+        dev_card = QFrame()
+        dev_card.setStyleSheet(card_style)
+        dc_lay = QVBoxLayout(dev_card)
+        dc_lay.setContentsMargins(12, 10, 12, 10)
+        dc_lay.setSpacing(6)
+        dc_lay.addWidget(self._section("DEVIATION REPORT"))
 
         dev_scroll = QScrollArea()
         dev_scroll.setWidgetResizable(True)
@@ -442,16 +487,16 @@ class DOPAWindow(QMainWindow):
                 border: none;
             }
             QScrollBar:vertical {
-                background: #1a202c;
+                background: #0f172a;
                 width: 6px;
                 border-radius: 3px;
             }
             QScrollBar::handle:vertical {
-                background: #4a5568;
+                background: #334155;
                 border-radius: 3px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #e94560;
+                background: #38bdf8;
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0px;
@@ -460,53 +505,62 @@ class DOPAWindow(QMainWindow):
 
         self.dev_lbl = QLabel("—")
         self.dev_lbl.setWordWrap(True)
-        self.dev_lbl.setStyleSheet(val_style)
+        self.dev_lbl.setStyleSheet("color: #f8fafc; font-size: 11px; background: transparent;")
         self.dev_lbl.setFont(QFont("Segoe UI", 10))
         self.dev_lbl.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         dev_scroll.setWidget(self.dev_lbl)
-        info_lay.addWidget(dev_scroll, 1)
+        dc_lay.addWidget(dev_scroll)
+        info_lay.addWidget(dev_card, 1)
 
-        # Instructions
+        # ── Card 4: Instructions / Legend ───────────
+        hint_card = QFrame()
+        hint_card.setStyleSheet(card_style)
+        hc_lay = QVBoxLayout(hint_card)
+        hc_lay.setContentsMargins(12, 10, 12, 10)
+        hc_lay.setSpacing(4)
+        hc_lay.addWidget(self._section("LEGEND & CONTROLS"))
+
         hint = QLabel(
-            "Legend\n"
-            "🟢 Green  = auto-detected cusp\n"
-            "🟡 Yellow = selected by you\n"
-            "🔵 Blue   = below Monson sphere\n"
-            "🔴 Red    = above Monson sphere\n\n"
-            "Mouse controls\n"
-            "🖱 Left-drag   = rotate\n"
-            "🖱 Scroll      = zoom\n"
-            "🖱 Shift+drag   = pan\n"
-            "⌨ Right click/ P key = pick cusp under cursor"
+            "🟢 Green = Auto-detected cusp\n"
+            "🟡 Yellow = User-selected cusp\n"
+            "🔵 Blue = Below Monson sphere\n"
+            "🔴 Red = Above Monson sphere\n\n"
+            "🖱 Left Click + Drag = Rotate\n"
+            "🖱 Mouse Scroll = Zoom\n"
+            "🖱 Shift + Drag = Pan\n"
+            "⌨ Right Click / P Key = Pick Cusp"
         )
         hint.setWordWrap(True)
-        hint.setFont(QFont("Segoe UI", 10))
-        hint.setStyleSheet("color: #718096; background: transparent;")
-        info_lay.addWidget(hint)
+        hint.setFont(QFont("Segoe UI", 9))
+        hint.setStyleSheet("color: #94a3b8; line-height: 1.3; background: transparent;")
+        hc_lay.addWidget(hint)
+        info_lay.addWidget(hint_card)
 
         splitter.addWidget(info_panel)
-        root_layout.addWidget(splitter, 1)
+        content_lay.addWidget(splitter, 1)
+        root_layout.addWidget(content_widget, 1)
 
         # ── Status bar ─────────────────────────────────────────────────
         self.status_bar = self.statusBar()
         self.status_bar.setStyleSheet("""
             QStatusBar {
-                background: #1a1a2e;
-                color: #a0aec0;
+                background: #0f172a;
+                color: #94a3b8;
                 font-size: 11px;
-                border-top: 1px solid #0f3460;
+                border-top: 1px solid #1e293b;
+                padding-left: 8px;
             }
         """)
         self.status_bar.showMessage("Ready — open a mesh file to begin.")
 
-        # pyvistaqt plotter (created lazily when mesh is loaded)
-        self.plotter = None
-
-    def _section(self, text, style) -> QLabel:
+    def _section(self, text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet(style)
-        lbl.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        lbl.setStyleSheet(
+            "color: #38bdf8; font-size: 10px; font-weight: bold; "
+            "letter-spacing: 1px; background: transparent;"
+        )
+        lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
         return lbl
 
     # ------------------------------------------------------------------
@@ -617,7 +671,7 @@ class DOPAWindow(QMainWindow):
     # Camera view presets
     # ------------------------------------------------------------------
     def _set_view(self, view: str):
-        if self.plotter is None:
+        if self.plotter is None or self.mesh is None:
             return
         presets = {
             "front":  dict(position=(0, -1, 0),  viewup=(0, 0, 1)),
@@ -631,23 +685,30 @@ class DOPAWindow(QMainWindow):
         if view not in presets:
             return
         p = presets[view]
-        # Scale direction to fit the current model bounds
         bounds = self.mesh.bounds          # (xmin,xmax,ymin,ymax,zmin,zmax)
         cx = (bounds[0] + bounds[1]) / 2
         cy = (bounds[2] + bounds[3]) / 2
         cz = (bounds[4] + bounds[5]) / 2
-        diag = max(
+        default_dist = max(
             bounds[1] - bounds[0],
             bounds[3] - bounds[2],
             bounds[5] - bounds[4],
         ) * 2.5
-        dx, dy, dz = p["position"]
+
+        # Retain current zoom level (camera distance to focal point)
+        curr_dist = self.plotter.camera.distance
+        dist = curr_dist if (curr_dist is not None and curr_dist > 0) else default_dist
+
+        pos_dir = np.array(p["position"], dtype=float)
+        norm = np.linalg.norm(pos_dir)
+        if norm > 0:
+            pos_dir = pos_dir / norm
+
         self.plotter.camera.focal_point = (cx, cy, cz)
-        self.plotter.camera.position    = (cx + dx * diag,
-                                           cy + dy * diag,
-                                           cz + dz * diag)
+        self.plotter.camera.position    = (cx + pos_dir[0] * dist,
+                                           cy + pos_dir[1] * dist,
+                                           cz + pos_dir[2] * dist)
         self.plotter.camera.up          = p["viewup"]
-        self.plotter.reset_camera()
         self.plotter.render()
 
     # ------------------------------------------------------------------
