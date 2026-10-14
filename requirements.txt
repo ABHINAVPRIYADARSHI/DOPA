@@ -12,5 +12,8 @@ numpy>=1.24.0
 scipy>=1.10.0
 scikit-learn>=1.2.0
 
+# Export (PDF Report Generation)
+fpdf2>=2.7.0
+
 # Packaging & Executable Building
 pyinstaller>=6.0.0

@@ -10,11 +10,18 @@ Rewritten with:
 import sys
 import os
 import threading
+import datetime
 
 import numpy as np
 from scipy.optimize import fsolve
 from scipy.spatial import cKDTree
 from sklearn.cluster import DBSCAN
+
+try:
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
+except ImportError:
+    FPDF_AVAILABLE = False
 
 import pyvista as pv
 from pyvistaqt import BackgroundPlotter   # embeds VTK inside Qt window
@@ -158,12 +165,14 @@ class DOPAWindow(QMainWindow):
         self.resize(1280, 800)
         self._set_icon()
 
-        self.mesh       = None
-        self.cusp_pts   = None
-        self.selected   = []
-        self.loader     = None
-        self.plotter    = None
+        self.mesh           = None
+        self.cusp_pts       = None
+        self.selected       = []
+        self.loader         = None
+        self.plotter        = None
         self._spinner_angle = 0
+        self.monson_center  = None      # stored after Monson computation
+        self.deviation_data = []        # list of dicts per cusp
 
         self._build_ui()
         self._start_spinner()
@@ -249,6 +258,14 @@ class DOPAWindow(QMainWindow):
         self.reset_btn.setStyleSheet(btn_style_primary)
         self.reset_btn.clicked.connect(self._reset)
         tb_lay.addWidget(self.reset_btn)
+
+        self.export_btn = QPushButton("📤  Export")
+        self.export_btn.setFixedHeight(34)
+        self.export_btn.setEnabled(False)
+        self.export_btn.setCursor(Qt.PointingHandCursor)
+        self.export_btn.setStyleSheet(btn_style_primary)
+        self.export_btn.clicked.connect(self._export_analysis)
+        tb_lay.addWidget(self.export_btn)
 
         root_layout.addWidget(toolbar)
 
@@ -524,8 +541,8 @@ class DOPAWindow(QMainWindow):
         hint = QLabel(
             "🟢 Green = Auto-detected cusp\n"
             "🟡 Yellow = User-selected cusp\n"
-            "🔵 Blue = Below Monson sphere\n"
-            "🔴 Red = Above Monson sphere\n\n"
+            "🔵 Blue =  Above Monson sphere\n"
+            "🔴 Red = Below Monson sphere\n\n"
             "🖱 Left Click + Drag = Rotate\n"
             "🖱 Mouse Scroll = Zoom\n"
             "🖱 Shift + Drag = Pan\n"
@@ -620,6 +637,7 @@ class DOPAWindow(QMainWindow):
     def _load_mesh(self, path: str):
         self.open_btn.setEnabled(False)
         self.reset_btn.setEnabled(False)
+        self.export_btn.setEnabled(False)
         for b in self._view_buttons:
             b.setEnabled(False)
         self.status_bar.showMessage(f"Loading: {os.path.basename(path)} …")
@@ -655,6 +673,7 @@ class DOPAWindow(QMainWindow):
 
         self.open_btn.setEnabled(True)
         self.reset_btn.setEnabled(True)
+        self.export_btn.setEnabled(True)
         for b in self._view_buttons:
             b.setEnabled(True)
 
@@ -728,7 +747,7 @@ class DOPAWindow(QMainWindow):
         self.plotter.set_background("#0d1117")
 
         # Add mesh
-        self.plotter.add_mesh(self.mesh, color="#b0bec5", opacity=0.92,
+        self.plotter.add_mesh(self.mesh, color="#b0bec5", opacity=1,
                                smooth_shading=True)
 
         # Add green cusp markers
@@ -784,23 +803,31 @@ class DOPAWindow(QMainWindow):
     def _compute_and_render_monson(self):
         pts    = np.array(self.selected)
         center = compute_monson(pts)
+        self.monson_center = center          # store for PDF export
 
         # Draw Monson sphere
-        # ambient=1.0 / diffuse=0.0: render in true flat colour so VTK
-        # lighting doesn't darken the sphere against the dark background.
         sphere = pv.Sphere(radius=MONSON_RADIUS, center=center,
                            theta_resolution=120, phi_resolution=120)
-        self.plotter.add_mesh(sphere, color="#7cced9", opacity=0.10,
+        self.plotter.add_mesh(sphere, color="#7cced9", opacity=0.45,
                               ambient=1.0, diffuse=0.0, specular=0.0)
 
-        # Deviation analysis
+        # Deviation analysis – store raw data for export
+        self.deviation_data = []
         lines = []
         for cusp in self.cusp_pts:
-            deviation = np.linalg.norm(cusp - center) - MONSON_RADIUS
-            is_above = deviation > 0
-            color = "#fc8181" if is_above else "#63b3ed"
+            dist     = np.linalg.norm(cusp - center)
+            deviation = dist - MONSON_RADIUS
+            is_above  = deviation > 0
+            color       = "#fc8181" if is_above else "#63b3ed"
             badge_color = "#dc2626" if is_above else "#2563eb"
-            status = "above" if is_above else "below"
+            status      = "above" if is_above else "below"
+
+            self.deviation_data.append({
+                "xyz":      cusp.tolist(),
+                "dist":     dist,
+                "deviation": deviation,
+                "is_above": is_above,
+            })
 
             self.plotter.add_mesh(
                 pv.Sphere(radius=0.9, center=cusp), color=color
@@ -829,14 +856,200 @@ class DOPAWindow(QMainWindow):
     def _reset(self):
         if self.mesh is None:
             return
-        self.selected = []
+        self.selected       = []
+        self.monson_center  = None
+        self.deviation_data = []
         self.sel_lbl.setText("0 / 3 cusps selected")
         self.dev_lbl.setText("—")
         self.monson_lbl.setText(
             "Select 3 cusp tips in the 3-D view\n(hover + press P)."
         )
-        # Rebuild plotter from scratch (clean slate)
         self._build_plotter()
+
+
+    # ------------------------------------------------------------------
+    # Export  (Screenshot + PDF)
+    # ------------------------------------------------------------------
+    def _export_analysis(self):
+        """Capture viewport screenshot and generate a PDF clinical report."""
+        from PyQt5.QtWidgets import QMessageBox
+
+        if self.plotter is None or self.mesh is None:
+            return
+
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Analysis Report",
+            os.path.join(APP_DIR, "SanVie_Report"),
+            "PDF Report (*.pdf)"
+        )
+        if not save_path:
+            return
+        if not save_path.lower().endswith(".pdf"):
+            save_path += ".pdf"
+
+        screenshot_path = save_path[:-4] + "_viewport.png"
+
+        # Step 1 – screenshot
+        screenshot_ok = False
+        try:
+            self.plotter.screenshot(screenshot_path)
+            screenshot_ok = True
+        except Exception as e:
+            QMessageBox.warning(self, "Screenshot Warning",
+                                f"Could not capture 3D viewport:\n{e}")
+            screenshot_path = None
+
+        # Step 2 – PDF
+        if not FPDF_AVAILABLE:
+            msg = ("fpdf2 is not installed.\n"
+                   "Run:  pip install fpdf2\n\n")
+            if screenshot_ok:
+                msg += f"Screenshot saved:\n{screenshot_path}"
+            QMessageBox.warning(self, "Missing Library: fpdf2", msg)
+            return
+
+        try:
+            self._generate_pdf(save_path, screenshot_path)
+        except Exception as e:
+            QMessageBox.critical(self, "PDF Export Error",
+                                 f"Could not generate PDF:\n{e}")
+            return
+
+        self.status_bar.showMessage(
+            f"Exported → {os.path.basename(save_path)}"
+            + (f"  +  {os.path.basename(screenshot_path)}" if screenshot_ok else "")
+        )
+        QMessageBox.information(
+            self, "Export Complete",
+            f"PDF Report:\n  {save_path}"
+            + (f"\n\nViewport Screenshot:\n  {screenshot_path}" if screenshot_ok else "")
+        )
+
+    def _generate_pdf(self, pdf_path, screenshot_path):
+        """Build the clinical PDF using fpdf2."""
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.add_page()
+        pdf.set_margins(10, 10, 10)
+
+        # Header bar
+        pdf.set_fill_color(15, 23, 42)
+        pdf.rect(0, 0, 210, 38, "F")
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_text_color(248, 250, 252)
+        pdf.set_xy(10, 7)
+        pdf.cell(0, 10, "SanVie  -  Digital Occlusal Plane Analyser", ln=True)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(148, 163, 184)
+        pdf.set_x(10)
+        ts = datetime.datetime.now().strftime("%d %B %Y   %H:%M")
+        pdf.cell(0, 8, f"Analysis Report   |   Generated: {ts}", ln=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_xy(10, 44)
+
+        # Helper: section title
+        def section(title):
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(2, 132, 199)
+            pdf.cell(0, 8, title, ln=True)
+            pdf.set_text_color(30, 41, 59)
+            pdf.set_font("Helvetica", "", 10)
+
+        # Helper: key-value row
+        def kv(label, value):
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(71, 85, 105)
+            pdf.cell(55, 6, label, ln=False)
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(15, 23, 42)
+            pdf.cell(0, 6, str(value), ln=True)
+
+        # Mesh information
+        section("MESH INFORMATION")
+        kv("Vertices:", f"{len(self.mesh.points):,}")
+        kv("Cusps Detected:", str(len(self.cusp_pts)))
+        pdf.ln(3)
+
+        # Monson sphere
+        section("MONSON SPHERE")
+        if self.monson_center is not None:
+            c = self.monson_center
+            kv("Sphere Centre:", f"({c[0]:.2f},  {c[1]:.2f},  {c[2]:.2f})  mm")
+            kv("Sphere Radius:", f"{MONSON_RADIUS:.1f} mm")
+        else:
+            pdf.set_text_color(148, 163, 184)
+            pdf.set_font("Helvetica", "I", 10)
+            pdf.cell(0, 6, "Not computed -- select 3 cusps in the 3D view.", ln=True)
+            pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
+
+        # Deviation table
+        section("CUSP DEVIATION REPORT")
+        if self.deviation_data:
+            col_w = [12, 62, 38, 38, 40]
+            headers = ["#", "Coordinates (X, Y, Z) mm", "Dist mm", "Dev mm", "Status"]
+            pdf.set_fill_color(30, 41, 59)
+            pdf.set_text_color(248, 250, 252)
+            pdf.set_font("Helvetica", "B", 9)
+            for w, h in zip(col_w, headers):
+                pdf.cell(w, 7, h, border=1, fill=True, align="C")
+            pdf.ln()
+
+            for i, d in enumerate(self.deviation_data):
+                x, y, z = d["xyz"]
+                dev      = d["deviation"]
+                dist     = d["dist"]
+                is_above = d["is_above"]
+                fill_rgb = (255, 241, 242) if is_above else (240, 249, 255)
+                text_rgb = (185, 28,  28)  if is_above else (29,  78, 216)
+                status   = "ABOVE" if is_above else "BELOW"
+                pdf.set_fill_color(*fill_rgb)
+                pdf.set_text_color(*text_rgb)
+                pdf.set_font("Helvetica", "B", 9)
+                row = [str(i + 1),
+                       f"({x:.1f}, {y:.1f}, {z:.1f})",
+                       f"{dist:.2f}",
+                       f"{dev:+.2f}",
+                       status]
+                for w, val in zip(col_w, row):
+                    pdf.cell(w, 6, val, border=1, fill=True, align="C")
+                pdf.ln()
+
+            pdf.set_text_color(71, 85, 105)
+            pdf.set_font("Helvetica", "", 9)
+            above = sum(1 for d in self.deviation_data if d["is_above"])
+            below = len(self.deviation_data) - above
+            pdf.ln(1)
+            pdf.cell(0, 6,
+                f"Total: {len(self.deviation_data)} cusps   |   "
+                f"{above} above sphere   |   {below} below sphere   |   "
+                f"Reference radius = {MONSON_RADIUS} mm",
+                ln=True)
+        else:
+            pdf.set_text_color(148, 163, 184)
+            pdf.set_font("Helvetica", "I", 10)
+            pdf.cell(0, 6, "No deviation data -- Monson sphere not yet computed.", ln=True)
+            pdf.set_text_color(0, 0, 0)
+        pdf.ln(5)
+
+        # 3D viewport screenshot
+        if screenshot_path and os.path.exists(screenshot_path):
+            section("3D VIEWPORT CAPTURE")
+            if pdf.get_y() > 165:
+                pdf.add_page()
+                pdf.set_xy(10, 10)
+            pdf.image(screenshot_path, x=10, w=190)
+
+        # Footer
+        # pdf.set_y(-15)
+        # pdf.set_font("Helvetica", "I", 8)
+        # pdf.set_text_color(148, 163, 184)
+        # pdf.cell(0, 8,
+        #     "SanVie | 3D Digital Occlusal Plane Analyser  |  "
+        #     "For clinical reference only.",
+        #     align="C")
+
+        pdf.output(pdf_path)
 
 
 # ---------------------------------------------------------------------------
